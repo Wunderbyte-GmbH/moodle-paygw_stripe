@@ -139,7 +139,7 @@ class checkout_service {
             $paymentmethodconfigurationid = $this->paymentmethodconfigservice->get_default_payment_method_config_id();
         }
 
-        $session = $this->stripe->checkout->sessions->create([
+        $params = [
             'success_url' => $CFG->wwwroot . '/payment/gateway/stripe/process.php?component=' . $component . '&paymentarea=' .
                 $paymentarea . '&itemid=' . $itemid . '&session_id={CHECKOUT_SESSION_ID}',
             'cancel_url' => $CFG->wwwroot . '/payment/gateway/stripe/cancelled.php?component=' . $component . '&paymentarea=' .
@@ -197,7 +197,21 @@ class checkout_service {
             ],
             'expires_at' => time() + min($CFG->sessiontimeout, 24 * 60 * 60),
             'expand' => ['customer', 'line_items'],
-        ]);
+        ];
+
+        // Let other plugins extend the Checkout Session parameters (e.g. Stripe Connect).
+        $hook = new \paygw_stripe\hook\checkout_session_params(
+            (int)$payable->get_account_id(),
+            $component,
+            $paymentarea,
+            $itemid,
+            $cost,
+            $payable->get_currency(),
+            $params
+        );
+        \core\di::get(\core\hook\manager::class)->dispatch($hook);
+
+        $session = $this->stripe->checkout->sessions->create($hook->get_params());
 
         $this->save_checkout_session($session);
 
